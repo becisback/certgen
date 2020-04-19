@@ -19,7 +19,6 @@ switch ($Account.Value) {
 
 $FileCSVData= $args[0]
 $SingleStep= $args[1]
-write-host "-$SingleStep-"
 
 #------------------------------------------------------------------------------
 # Se non esiste il file CSV si esce con un messaggio d'errore
@@ -31,6 +30,8 @@ $CertCount= 0
 # Lettura delle variabili dal file CSV
 foreach ($Certificate in $CSV) {
     $TimeStamp= Get-Date
+	$MessageColour= 'Green'
+	
 	#------------------------------------------------------------------------------
 	# Si azzera la SubCA perchè viene riutilizzato il valore non inizializzandolo 
 	# per evitare la rilettura del certificato nell'elaborazione del PFX
@@ -58,7 +59,7 @@ foreach ($Certificate in $CSV) {
 			{$Certificate.PassWD='12345678'}
 	}
 
-    #--------------------------------------------------
+    #------------------------------------------------------------------------------
     #Diverse disposizioni a seconda dell'Ambito di sicurezza in questione
     switch ($Certificate.Ambito) {
         "Public-Produzione" {
@@ -113,11 +114,13 @@ foreach ($Certificate in $CSV) {
 	#------------------------------------------------------------------------------
 	# Verifica che la macchina di esecuzione sia consistente con l'ambiente operativo corrente
 	if (($AmbienteExe -eq 'NPE') -and ($NAS -eq "\\nassi1.local\certificati\ATTIVI\")) {
-		Write-Host -Foreground black -BackgroundColor RED "`tNon è possibile creare il certificato $($Certificate.CN) partendo dall'ambiente di Produzione"
+		$MessageColour= 'Red'
+		Write-Host -Foreground black -BackgroundColor $MessageColour "`tNon è possibile creare il certificato $($Certificate.CN) partendo dall'ambiente di Produzione"
 		continue
 	}
 	elseif (($AmbienteExe -eq 'PRODUZIONE') -and ($NAS -eq "\\nastf2.local\certificati\ATTIVI\")) {
-		Write-Host -Foreground black -BackgroundColor RED "`tNon è possibile creare il certificato $($Certificate.CN) partendo dall'ambiente NPE"
+		$MessageColour= 'Red'
+		Write-Host -Foreground black -BackgroundColor $MessageColour "`tNon è possibile creare il certificato $($Certificate.CN) partendo dall'ambiente NPE"
 		continue
 	}
 
@@ -199,7 +202,7 @@ foreach ($Certificate in $CSV) {
 	if ((!$SingleStep) -or ($SingleStep -eq 'OPT')) {
 		#----------------------------------------------------------------------------------------
 		# Crea la directory di destinazione
-		New-Item -Path $FolderDestination -ItemType directory   #*>$null
+		New-Item -Path $FolderDestination -ItemType directory   *>$null
 
 		#----------------------------------------------------------------------------------------
         # Creazione del file CSV
@@ -207,20 +210,24 @@ foreach ($Certificate in $CSV) {
 
 		#----------------------------------------------------------------------------------------
         # Creazione del file DTL con i primi dettagli del certificato
-        Set-Content -Path $FileDTL -Value $Details -force  #*>$null
+        Set-Content -Path $FileDTL -Value $Details -force  *>$null
 
         #----------------------------------------------------------------------------------------
         # Creazione del file OPT delle opzioni per il certificato
-        Set-Content -Path $FileOPT -Value $OPT -force  #*>$null
+        Set-Content -Path $FileOPT -Value $OPT -force  *>$null
 	}
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'CSR')) {
 		#----------------------------------------------------------------------------------------
         # Creazione del file CSR Certificate Sign Request 
-        & certreq -new $FileOPT $FileCSR  #*>$null
+        & certreq -new $FileOPT $FileCSR  *>$null
+		if (($Certificate.Ambito -eq 'Public-Produzione') -or ($Certificate.Ambito -eq 'Public-NPE')) {
+			Write-Host -Foreground black -background $MessageColour "`tDati del certificato salvati in $FolderDestination"
+			continue
+		}
 	}
  
-	if ((!$SingleStep) -or ($SingleStep -eq 'CSR')) {
+	if ((!$SingleStep) -or ($SingleStep -eq 'CER')) {
 		#----------------------------------------------------------------------------------------
         # Firma del certificato
         & certreq -submit -config $CertAuth -attrib $Template $FileCSR $FileCER  *>$null
@@ -326,6 +333,9 @@ foreach ($Certificate in $CSV) {
     }
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'PFX')) {
+	#========================================================================================
+	#Rivedere la creazione dei PEM PUB e PRV con la chain 
+	
 		#----------------------------------------------------------------------------------------
 		# Acquisizione del certificato nello storage personale
 		& certreq -accept $FileCER  *>$null
@@ -345,7 +355,7 @@ foreach ($Certificate in $CSV) {
 		#----------------------------------------------------------------------------------------
 		# Si esaminano i dati nel certificato prodotto se la $SubCA non è già stata inizializzata 
 		# nell'elaborazione del CER
-		if (!SubCA) {
+		if (!$SubCA) {
 			$FullCertificate= $(& $OpenSSL x509 -in $FileCER -text -noout)  2>$null
 
 			$NLinea= 0			
@@ -397,8 +407,16 @@ foreach ($Certificate in $CSV) {
 		$CertPRV | Set-Content -Path $FilePRV -force  *>$null
 	}
 
+	#----------------------------------------------------------------------------------------
+	# Si Cancellano i file non necessari
+    if (Test-Path $FileRSP) {Remove-Item -Path $FileRSP}
+    if (Test-Path $FTmpPUB) {Remove-Item -Path $FTmpPUB}
+    if (Test-Path $FTmpPRV) {Remove-Item -Path $FTmpPRV}
+
+    Write-Host -Foreground black -background $MessageColour "`tDati del certificato salvati in $FolderDestination"
+
 }
-	
+Write-Host	
 exit
 
 
@@ -453,11 +471,6 @@ exit
         if (Test-Path $FilePUB) {Copy-Item -Path $FilePUB -Destination "$CertificateFolder"}
     }
 
-	#--------------------------------------------------
-	# Si Cancellano i file non necessari
-    if (Test-Path $FileRSP) {Remove-Item -Path $FileRSP}
-    if (Test-Path $FTmpPUB) {Remove-Item -Path $FTmpPUB}
-    if (Test-Path $FTmpPRV) {Remove-Item -Path $FTmpPRV}
 
     Write-Host -Foreground black -background Green "`tDati del certificato salvati in:"
 	Write-Host "`t$FolderDestination"
