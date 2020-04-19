@@ -219,6 +219,7 @@ switch ($SingleStep) {
         Set-Content -Path $FileOPT -Value $OPT -force  *>$null
 		Write-Host "`tDati del certificato salvati in:"
 		Write-Host -Foreground black -background Green "`t$FolderDestination"
+		# TODO remove this exit commandexit
 		exit
     }
 	'CSR' {
