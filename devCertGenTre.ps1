@@ -1,8 +1,8 @@
 ﻿# Utility per la creazione di certificati V.3
-$Versione='20200419'
+$Versione='20200420'
 
-<#F.Beconcini 20200419
-Primo rilascio
+<#F.Beconcini 20200420
+Inserita la conversione del PFX in formato RSA
 #>
 
 
@@ -30,9 +30,9 @@ $CertCount= 0
 # Lettura delle variabili dal file CSV
 foreach ($Certificate in $CSV) {
     $TimeStamp= Get-Date
-	
+
 	#------------------------------------------------------------------------------
-	# Si azzera la SubCA perchè viene riutilizzato il valore non inizializzandolo 
+	# Si azzera la SubCA perchè viene riutilizzato il valore non inizializzandolo
 	# per evitare la rilettura del certificato nell'elaborazione del PFX
 	$SubCA= ''
 
@@ -41,16 +41,16 @@ foreach ($Certificate in $CSV) {
     #Write-Progress -Activity "Scan dei certificati" -Status "$CertCount/$($DirList.Count) certificati acquisiti" -PercentComplete $PerC
 
     if (!$Certificate.CN) {Throw "Errore nel file dei dati $FileCSVData non esiste il CommonName"}
-    
+
 	$Certificate.CN= $Certificate.CN.Trim()
 
-    if ($Certificate.SAN) 
+    if ($Certificate.SAN)
         {$MultiSAN= @($Certificate.SAN.split(';').trim())}
     else
         {$MultiSAN= @('---')} #Cast $Multisan ad un array
 
     if (!$Certificate.SHA) {$Certificate.SHA='SHA256'}
-	
+
     if (!$Certificate.PassWD) {
 		if (($Certificate.Ambito -eq 'Public-Produzione') -or ($Certificate.Ambito -eq 'Public-NPE'))
 			{$Certificate.PassWD=[System.Web.Security.Membership]::GeneratePassword(10,0)}
@@ -145,13 +145,15 @@ foreach ($Certificate in $CSV) {
     $FTmpPRV= $FolderDestination + $Certificate.CN + "_PRV_tmp.key"	#File temporaneo con la chiave PRIVATA
     $FilePUB= $FolderDestination + $Certificate.CN + "_PUB.CRT"	#File con la chiave PUBBLICA e KeyChain X509 PEM
     $FilePRV= $FolderDestination + $Certificate.CN + "_PRV.KEY"	#File con la chiave PRIVATA e KeyChain X509 PEM
-	$FileDTL= $FolderDestination + $Certificate.CN + ".TXT"	#File di testo con i dettagli del certificato
+		$FileDTL= $FolderDestination + $Certificate.CN + ".TXT"	#File di testo con i dettagli del certificato
     $FileCSV= $FolderDestination + $Certificate.CN + ".CSV"	#File CSV necessario per produrre il certificato
-    $FileJKS= $FolderDestination + $Certificate.CN + ".JKS"	#File Java Key Store
+		$FileJKS= $FolderDestination + $Certificate.CN + ".JKS"	#File Java Key Store
+		$FileRSA= $FolderDestination + $Certificate.CN + "_RSA.KEY"	#File della chiave privata in formato RSA
+
 
 	#---------------------------------------------------------------------------------
 	# Si compone il contenuto informativo per il file TXT
-	$Details= "# CertGenDue v.$Versione   $TimeStamp`r`n`r`n" + `
+	$Details= "# CertGenTre v.$Versione   $TimeStamp`r`n`r`n" + `
 		"Codice APM`r`n`t$($Certificate.CodiceAPM)`r`n`r`n" + `
 		"Common Name`r`n`t$($Certificate.CN)`r`n`r`n" + `
 		"Subject Alternative Names`r`n`t$MultiSAN`r`n`r`n" + `
@@ -159,10 +161,10 @@ foreach ($Certificate in $CSV) {
 		"Password`r`n`t$($Certificate.PassWD)`r`n`r`n" + `
 		"Certificate Folder`r`n`t$FolderDestination`r`n`r`n" + `
 		"Certificato elaborato da`r`n`t$UserName`r`n"
-		
+
 	#---------------------------------------------------------------------------------
 	#Si compone la sezione [Extentions] per il file delle opzioni
-	$Extentions= ` 
+	$Extentions= `
 		"[Extensions]" + `
 		"`n2.5.29.17=`"{text}`"" + `
 		"`n_continue_=`"EMail=hostmaster@mps.it&`"" + `
@@ -171,12 +173,12 @@ foreach ($Certificate in $CSV) {
 	#---------------------------------------------------------------------------------
 	# si aggiungono eventuali SAN. $MultiSAN potrò essere una stringa o un array
 	if ($MultiSAN -ne '---') {for ($i=0; $i -lt $MultiSAN.Count; $i++) {$Extentions=$Extentions + "&`"`n_continue_=`"DNS=" + $MultiSAN[$i]}}
-		
+
 	#---------------------------------------------------------------------------------
 	#Si chiude la stringa delle estensioni con opportune "
 	$Extentions= $Extentions + '"'
 	$Subject= "cn=$($Certificate.CN),ou=Consorzio Operativo Gruppo MPS,o=Banca Monte dei Paschi di Siena S.p.A,c=IT,l=Siena,s=Siena"
-	
+
 	#---------------------------------------------------------------------------------
 	#Predisposizione del contenuto del file delle opzioni
 	$OPT= `
@@ -195,7 +197,7 @@ foreach ($Certificate in $CSV) {
 		"`nOID=1.3.6.1.5.5.7.3.1" + `
 		"`nOID=1.3.6.1.5.5.7.3.2`n" + `
 		$Extentions
-	
+
 	if ((!$SingleStep) -or ($SingleStep -eq 'OPT')) {
 		#---------------------------------------------------------------------------------
 		# Crea la directory di destinazione
@@ -216,7 +218,7 @@ foreach ($Certificate in $CSV) {
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'CSR')) {
 		#---------------------------------------------------------------------------------
-        # Creazione del file CSR Certificate Sign Request 
+        # Creazione del file CSR Certificate Sign Request
 		if (!(Test-Path $FileOPT)) {Throw "Non esiste il file delle opzioni $FileOPT"}
         & certreq -new $FileOPT $FileCSR  1>$null
 		#---------------------------------------------------------------------------------
@@ -226,7 +228,7 @@ foreach ($Certificate in $CSV) {
 			continue
 		}
 	}
- 
+
 	if ((!$SingleStep) -or ($SingleStep -eq 'CER')) {
 		#---------------------------------------------------------------------------------
         # Firma del certificato
@@ -237,11 +239,11 @@ foreach ($Certificate in $CSV) {
 		# Si esaminano i dati nel certificato prodotto
 		$FullCertificate= $(& $OpenSSL x509 -in $FileCER -text -noout)  2>$null
 		$NLinea= 0
-		
+
 		do {
 			if ($FullCertificate[$NLinea] -match 'Issuer: C=.+, CN=(.+)') {$SubCA= $Matches.1}
 		} while (($NLinea++ -gt $FullCertificate.Count) -or !$SubCA)
-		
+
 		$Activation= ''
 		do {
 			if ($FullCertificate[$NLinea] -match 'Not Before: (.{3})\s+(\d+)\s+.+:.+:.+\s(\d{4}) GMT') {
@@ -260,7 +262,7 @@ foreach ($Certificate in $CSV) {
 					'Dec' {$Activation= $Matches.2 + ' Dic ' + $Matches.3}
 				}
 			}
-		} while (($NLinea++ -gt $FullCertificate.Count) -or !$Activation)        
+		} while (($NLinea++ -gt $FullCertificate.Count) -or !$Activation)
 
 		$Expiration= ''
 		do {
@@ -280,40 +282,40 @@ foreach ($Certificate in $CSV) {
 					'Dec' {$Expiration= $Matches.2 + ' Dic ' + $Matches.3}
 				}
 			}
-		} while (($NLinea++ -gt $FullCertificate.Count) -or !$Expiration)        
+		} while (($NLinea++ -gt $FullCertificate.Count) -or !$Expiration)
 
 
 		switch ($SubCA) {
 			"AXA-Issuing-CA-PR1"										#CA Interna AXA
 				{$RootCA= 'AXA-Enterprise-Root-CA'}
-				
+
 			"Sectigo RSA Extended Validation Secure Server CA"			#CA Sectigo per i certificati Extended Validation
 				{$RootCA= 'USERTrust RSA Certification Authority'}
-				
+
 			"Sectigo RSA Organization Validation Secure Server CA"  	#CA Sectigo per i certificati MultiSAN
 				{$RootCA= 'USERTrust RSA Certification Authority'}
-				
+
 			"USERTrust RSA Organization Validation Secure Server CA"	#CA Sectigo per i certificati RealWEB
 				{$RootCA= 'USERTrust RSA Certification Authority'}
-				
-			"SUB01-GMPS"												#CA MPS Global per la intranet 
+
+			"SUB01-GMPS"												#CA MPS Global per la intranet
 				{$RootCA= 'RootCA-GMPS'}
-				
+
 			"SUBMPS1-TF"												#CA MPS TestFactory
 				{$RootCA= 'ROOTMPS-TF'}
-				
-			"SUB01-LOCAL G2"											#CA MPS Local per la intranet 
+
+			"SUB01-LOCAL G2"											#CA MPS Local per la intranet
 				{$RootCA= 'RootCA-GMPS'}
-				
+
 			default {Throw "`tSubCA non censita nel programma: $SubCA`r`n"}
 		}
-		
+
 		$FileSubCA= $NAS + $SubCA + '\' + $SubCA + '.CRT'
 		if (!(Test-Path $FileSubCA)) {Throw "Certificato della SubCA $FileSubCA non trovato: $FileSubCA"}
-		
+
 		$FileRootCA= $NAS + $RootCA + '\' + $RootCA + '.CRT'
 		if (!(Test-Path $FileRootCA)) {Throw "Certificato della RootCA $FileRootCA non trovato: $FileRootCA"}
-			
+
 		#---------------------------------------------------------------------------------
 		# Si completa il file TXT con i dettagli del certificato
 		$Details= `
@@ -358,12 +360,12 @@ foreach ($Certificate in $CSV) {
 		& certutil -delstore -user my $Certificate.CN  1>$null
 
 		#---------------------------------------------------------------------------------
-		# Si esaminano i dati nel certificato prodotto se la $SubCA non è già stata inizializzata 
+		# Si esaminano i dati nel certificato prodotto se la $SubCA non è già stata inizializzata
 		# nell'elaborazione del CER
 		if (!$SubCA) {
 			$FullCertificate= $(& $OpenSSL x509 -in $FileCER -text -noout)  2>$null
 
-			$NLinea= 0			
+			$NLinea= 0
 			do {
 				if ($FullCertificate[$NLinea] -match 'Issuer: C=.+, CN=(.+)') {$SubCA= $Matches.1}
 			} while (($NLinea++ -gt $FullCertificate.Count) -or !$SubCA)
@@ -371,37 +373,43 @@ foreach ($Certificate in $CSV) {
 			switch ($SubCA) {
 				"AXA-Issuing-CA-PR1"										#CA Interna AXA
 					{$RootCA= 'AXA-Enterprise-Root-CA'}
-					
+
 				"Sectigo RSA Extended Validation Secure Server CA"			#CA Sectigo per i certificati Extended Validation
 					{$RootCA= 'USERTrust RSA Certification Authority'}
-					
+
 				"Sectigo RSA Organization Validation Secure Server CA"  	#CA Sectigo per i certificati MultiSAN
 					{$RootCA= 'USERTrust RSA Certification Authority'}
-					
+
 				"USERTrust RSA Organization Validation Secure Server CA"	#CA Sectigo per i certificati RealWEB
 					{$RootCA= 'USERTrust RSA Certification Authority'}
-					
-				"SUB01-GMPS"												#CA MPS Global per la intranet 
+
+				"SUB01-GMPS"												#CA MPS Global per la intranet
 					{$RootCA= 'RootCA-GMPS'}
-					
+
 				"SUBMPS1-TF"												#CA MPS TestFactory
 					{$RootCA= 'ROOTMPS-TF'}
-					
-				"SUB01-LOCAL G2"											#CA MPS Local per la intranet 
+
+				"SUB01-LOCAL G2"											#CA MPS Local per la intranet
 					{$RootCA= 'RootCA-GMPS'}
-					
+
 				default {Throw "`tSubCA non censita nel programma: $SubCA`r`n"}
 			}
 
 			$FileSubCA= $NAS + $SubCA + '\' + $SubCA + '.CRT'
 			if (!(Test-Path $FileSubCA)) {Throw "Certificato della SubCA $FileSubCA non trovato: $FileSubCA"}
-			
+
 			$FileRootCA= $NAS + $RootCA + '\' + $RootCA + '.CRT'
 			if (!(Test-Path $FileRootCA)) {Throw "Certificato della RootCA $FileRootCA non trovato: $FileRootCA"}
 		}
 
 		#---------------------------------------------------------------------------------
-		# Estrazione della chiave privata del certificato in formato X509 PEM dal PFX 
+		# Estrazione della chiave privata del certificato in formato RSA dal PFX
+		& $OpenSSL rsa -in $FilePFX -inform PKCS12 -passin pass:$($Certificate.PassWD) -out $FileRSA 1>$null
+		openssl  -in Certificato.PFX -inform PKCS12 -passin pass:PassWord -out CertificatoRSA.KEY
+
+
+		#---------------------------------------------------------------------------------
+		# Estrazione della chiave privata del certificato in formato X509 PEM dal PFX
 		#=================================================================================
 		# Toglierre l'opzione NODES che estrae la chiave privata in chiaro
 		& $OpenSSL pkcs12 -in $FilePFX -out $FTmpPRV -clcerts -nodes -password pass:$($Certificate.PassWD)  1>$null
@@ -417,16 +425,16 @@ foreach ($Certificate in $CSV) {
 		$CertPRV | Set-Content -Path $FilePRV -force  1>$null
 
 		#---------------------------------------------------------------------------------
-		#Si crea il Java Key Store con il certificato Alias= $DNSName
+		# Si crea il Java Key Store con il certificato Alias= $DNSName
 		if ($(keytool -list -storetype pkcs12 -keystore $FilePFX -deststorepass $Certificate.PassWD)[6] -match "(.*?),.*") {
 			$CertificateAlias= $Matches[1]
 		}
 		else {Throw "Non trovato il certificato nel PFX"}
-		
+
 		keytool -importkeystore `
 			-srcstoretype pkcs12 -srckeystore $FilePFX -srcstorepass $Certificate.PassWD -srcalias $CertificateAlias `
 			-deststoretype jks -destkeystore $FileJKS -deststorepass $Certificate.PassWD -destalias $Certificate.CN `
-			-noprompt 
+			-noprompt
 		keytool -import -alias $SubCA -file $FileSubCA -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt  *>$null
 		keytool -import -alias $RootCA -file $FileRootCA -trustcacerts -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt  *>$null
 	}
@@ -446,13 +454,13 @@ foreach ($Certificate in $CSV) {
     Write-Host -Foreground black -background Green "`tDati del certificato salvati in $FolderDestination"
 
 }
-Write-Host	
+Write-Host
 exit
 
 
-    
- <#           
-       
+
+ <#
+
 
     #--------------------------------------------------
     # Se il certificato è al primo rilascio ne viene fatta una copia anche nella directory padre di R1
