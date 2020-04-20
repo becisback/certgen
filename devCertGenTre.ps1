@@ -1,10 +1,7 @@
 ﻿# Utility per la creazione di certificati V.3
-$Versione='20200420'
+#F.Beconcini 20200419
 
-<#F.Beconcini 20200420
-Inserita la conversione del PFX in formato RSA
-#>
-
+$Versione='20200421'
 
 $Account= get-item "ENV:\USERNAME"
 switch ($Account.Value) {
@@ -50,13 +47,6 @@ foreach ($Certificate in $CSV) {
         {$MultiSAN= @('---')} #Cast $Multisan ad un array
 
     if (!$Certificate.SHA) {$Certificate.SHA='SHA256'}
-
-    if (!$Certificate.PassWD) {
-		if (($Certificate.Ambito -eq 'Public-Produzione') -or ($Certificate.Ambito -eq 'Public-NPE'))
-			{$Certificate.PassWD=[System.Web.Security.Membership]::GeneratePassword(10,0)}
-		else
-			{$Certificate.PassWD='12345678'}
-	}
 
     #------------------------------------------------------------------------------
     #Diverse disposizioni a seconda dell'Ambito di sicurezza in questione
@@ -131,8 +121,15 @@ foreach ($Certificate in $CSV) {
 		while (Test-Path $($CertificateFolder + "R$Release\")) {$Release++}
 	}
 
-	if ($SingleStep -and ($SingleStep -ne 'OPT') -and ($Release -gt 0)) {$Release--}
-	$FolderDestination= $CertificateFolder + "R$Release\"
+	if ($SingleStep -and ($SingleStep -ne 'OPT') -and ($Release -gt 0)) {
+		#---------------------------------------------------------------------------------
+        # Se siamo in SingleStep si lavora nella stessa directory del file CSV
+		$FolderDestination= "$(Split-Path $FileCSVData)\"
+		$Release--
+	}
+	else {
+		$FolderDestination= $CertificateFolder + "R$Release\"
+	}
 
 	#--------------------------------------------------------------------------------
 	# Si preparano le variabili per i nomi dei file
@@ -145,20 +142,21 @@ foreach ($Certificate in $CSV) {
     $FTmpPRV= $FolderDestination + $Certificate.CN + "_PRV_tmp.key"	#File temporaneo con la chiave PRIVATA
     $FilePUB= $FolderDestination + $Certificate.CN + "_PUB.CRT"	#File con la chiave PUBBLICA e KeyChain X509 PEM
     $FilePRV= $FolderDestination + $Certificate.CN + "_PRV.KEY"	#File con la chiave PRIVATA e KeyChain X509 PEM
-		$FileDTL= $FolderDestination + $Certificate.CN + ".TXT"	#File di testo con i dettagli del certificato
+	$FileDTL= $FolderDestination + $Certificate.CN + ".TXT"	#File di testo con i dettagli del certificato
     $FileCSV= $FolderDestination + $Certificate.CN + ".CSV"	#File CSV necessario per produrre il certificato
-		$FileJKS= $FolderDestination + $Certificate.CN + ".JKS"	#File Java Key Store
-		$FileRSA= $FolderDestination + $Certificate.CN + "_RSA.KEY"	#File della chiave privata in formato RSA
+	$FileJKS= $FolderDestination + $Certificate.CN + ".JKS"	#File Java Key Store
+	$FileRSA= $FolderDestination + $Certificate.CN + "_RSA.KEY"	#File della chiave privata in formato RSA
+	$FileRCD= $FolderDestination + $Certificate.CN + ".RCD"	#File Record per aggiornare l'inventario
 
 
 	#---------------------------------------------------------------------------------
 	# Si compone il contenuto informativo per il file TXT
-	$Details= "# CertGenTre v.$Versione   $TimeStamp`r`n`r`n" + `
+	$Details=  `
+		"# CertGenTre v.$Versione   $TimeStamp`r`n`r`n" + `
 		"Codice APM`r`n`t$($Certificate.CodiceAPM)`r`n`r`n" + `
 		"Common Name`r`n`t$($Certificate.CN)`r`n`r`n" + `
 		"Subject Alternative Names`r`n`t$MultiSAN`r`n`r`n" + `
 		"Algoritmo SHA`r`n`t$($Certificate.SHA)`r`n`r`n" + `
-		"Password`r`n`t$($Certificate.PassWD)`r`n`r`n" + `
 		"Certificate Folder`r`n`t$FolderDestination`r`n`r`n" + `
 		"Certificato elaborato da`r`n`t$UserName`r`n"
 
@@ -317,13 +315,17 @@ foreach ($Certificate in $CSV) {
 		if (!(Test-Path $FileRootCA)) {Throw "Certificato della RootCA $FileRootCA non trovato: $FileRootCA"}
 
 		#---------------------------------------------------------------------------------
-		# Si completa il file TXT con i dettagli del certificato
+		# Si compone il contenuto informativo per il file TXT
 		$Details= `
 			"Certification SUB Authority`r`n`t" + $SubCA + "`r`n`r`n" + `
 			"Certification Root Authority`r`n`t" + $RootCA + "`r`n`r`n" + `
 			"NotBefore`r`n`t" + $Activation + "`r`n`r`n" + `
-			"NotAfter`r`n`t" + $Expiration + "`r`n`r`n" + `
-			'---------------------------------------------------------------------------------' + "`r`n" + `
+			"NotAfter`r`n`t" + $Expiration + "`r`n"
+		#---------------------------------------------------------------------------------
+        # Aggiunge al file DTL i dettagli del certificato
+        Add-Content -Path $FileDTL -Value $Details -force  1>$null
+
+		$Record= `
 			$Certificate.CodiceAPM + "`t" + `
 			$Certificate.CN + "`t" + `
 			$Certificate.SAN + "`t" + `
@@ -331,7 +333,9 @@ foreach ($Certificate in $CSV) {
 			$CertificateFolder + "`t" + `
 			$SubCA + "`t" + `
 			$UserName
-		Add-Content -Path $FileDTL $Details  *>$null
+		#---------------------------------------------------------------------------------
+        # Crea il file Record per aggiornare l'inventario dei certificati
+        Set-Content -Path $FileRCD -Value $Record -force  1>$null
 
 		#---------------------------------------------------------------------------------
 		# Si compone la parte PUBBLICA del certificato con la catena di certificazione
@@ -350,6 +354,20 @@ foreach ($Certificate in $CSV) {
 		#---------------------------------------------------------------------------------
 		# Acquisizione del certificato nello storage personale
 		& certreq -accept $FileCER  1>$null
+
+		if (!$Certificate.PassWD) {
+			if (($Certificate.Ambito -eq 'Public-Produzione') -or ($Certificate.Ambito -eq 'Public-NPE'))
+				{$Certificate.PassWD=[System.Web.Security.Membership]::GeneratePassword(10,0)}
+			else
+				{$Certificate.PassWD='12345678'}
+		}
+
+		#---------------------------------------------------------------------------------
+		# Si compone il contenuto informativo per il file TXT con la password
+		$Details= "Password`r`n`t$($Certificate.PassWD)"
+		#---------------------------------------------------------------------------------
+        # Aggiunge al file DTL i dettagli del certificato
+        Add-Content -Path $FileDTL -Value $Details -force  1>$null
 
 		#---------------------------------------------------------------------------------
 		# Export del certificato in formato PFX con password
@@ -404,13 +422,13 @@ foreach ($Certificate in $CSV) {
 
 		#---------------------------------------------------------------------------------
 		# Estrazione della chiave privata del certificato in formato RSA dal PFX
-		& $OpenSSL rsa -in $FilePFX -inform PKCS12 -passin pass:$($Certificate.PassWD) -out $FileRSA 1>$null
+		& $OpenSSL rsa -in $FilePFX -inform PKCS12 -passin pass:$($Certificate.PassWD) -out $FileRSA *>$null
 
 		#---------------------------------------------------------------------------------
 		# Estrazione della chiave privata del certificato in formato X509 PEM dal PFX
 		#=================================================================================
 		# Toglierre l'opzione NODES che estrae la chiave privata in chiaro
-		& $OpenSSL pkcs12 -in $FilePFX -out $FTmpPRV -clcerts -nodes -password pass:$($Certificate.PassWD)  1>$null
+		& $OpenSSL pkcs12 -in $FilePFX -out $FTmpPRV -clcerts -nodes -password pass:$($Certificate.PassWD)  *>$null
 
 		#---------------------------------------------------------------------------------
 		# Si compone la parte PRIVATA del certificato con la catena di certificazione
