@@ -1,5 +1,5 @@
 ﻿# Utility per la creazione di certificati V.3
-# F.Beconcini 20200419
+# -F.Beconcini 20200419
 
 $Versione='20200421'
 
