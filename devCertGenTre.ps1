@@ -23,7 +23,7 @@ $SingleStep= $args[1]
 if (!(Test-Path $FileCSVData)) {Throw "Il file dei dati $FileCSVData non esiste"}
 
 $CSV= Import-csv $FileCSVData
-if (($SingleStep) -and ($CSV.Count -gt 1)) {Throw "Non si può eseguire in Single Step se il file CSV contiene più di un record"}
+#if (($SingleStep) -and ($CSV.Count -gt 1)) {Throw "Non si può eseguire in Single Step se il file CSV contiene più di un record"}
 
 $CertCount= 0
 #------------------------------------------------------------------------------
@@ -453,24 +453,5 @@ foreach ($Certificate in $CSV) {
 
 }
 Write-Host
+
 exit
-
-
-
- <#
-
-
-    #--------------------------------------------------
-    # Se il certificato è al primo rilascio ne viene fatta una copia anche nella directory padre di R1
-    if ($Release -eq 1) {
-        if (Test-Path $FilePUB) {Copy-Item -Path $FilePUB -Destination "$CertificateFolder"}
-    }
-
-
-    Write-Host -Foreground black -background Green "`tDati del certificato salvati in:"
-	Write-Host "`t$FolderDestination"
-}
-
-Write-Host
-
-#>
