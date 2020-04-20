@@ -405,8 +405,6 @@ foreach ($Certificate in $CSV) {
 		#---------------------------------------------------------------------------------
 		# Estrazione della chiave privata del certificato in formato RSA dal PFX
 		& $OpenSSL rsa -in $FilePFX -inform PKCS12 -passin pass:$($Certificate.PassWD) -out $FileRSA 1>$null
-		openssl  -in Certificato.PFX -inform PKCS12 -passin pass:PassWord -out CertificatoRSA.KEY
-
 
 		#---------------------------------------------------------------------------------
 		# Estrazione della chiave privata del certificato in formato X509 PEM dal PFX
