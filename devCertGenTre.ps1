@@ -1,5 +1,5 @@
 ﻿# Utility per la creazione di certificati V.3
-# -F.Beconcini 20200419
+#F.Beconcini 20200419
 
 $Versione='20200421'
 
@@ -111,18 +111,18 @@ foreach ($Certificate in $CSV) {
 		continue
 	}
 
-	#--------------------------------------------------
+	#------------------------------------------------------------------------------
 	# Se non esiste si determina una nuova cartella di destinazione partendo dalla $Release=1
 	$Release= 1
 	if(Test-Path $CertificateFolder) {
-		#--------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Se esiste già la cartella Rn si ricava il nome della successiva
 		# mettendo il suffisso di release = n+1
 		while (Test-Path $($CertificateFolder + "R$Release\")) {$Release++}
 	}
 
 	if ($SingleStep -and ($SingleStep -ne 'OPT') -and ($Release -gt 0)) {
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
         # Se siamo in SingleStep si lavora nella stessa directory del file CSV
 		$FolderDestination= "$(Split-Path $FileCSVData)\"
 		$Release--
@@ -131,7 +131,7 @@ foreach ($Certificate in $CSV) {
 		$FolderDestination= $CertificateFolder + "R$Release\"
 	}
 
-	#--------------------------------------------------------------------------------
+	#------------------------------------------------------------------------------
 	# Si preparano le variabili per i nomi dei file
     $FileOPT= $FolderDestination + $Certificate.CN + ".OPT"	#File delle opzioni per produrre il CSR
     $FileCSR= $FolderDestination + $Certificate.CN + ".CSR"	#File Certificate Sign Request X509 PEM
@@ -149,7 +149,7 @@ foreach ($Certificate in $CSV) {
 	$FileRCD= $FolderDestination + $Certificate.CN + ".RCD"	#File Record per aggiornare l'inventario
 
 
-	#---------------------------------------------------------------------------------
+	#------------------------------------------------------------------------------
 	# Si compone il contenuto informativo per il file TXT
 	$Details=  `
 		"# CertGenTre v.$Versione   $TimeStamp`r`n`r`n" + `
@@ -160,7 +160,7 @@ foreach ($Certificate in $CSV) {
 		"Certificate Folder`r`n`t$FolderDestination`r`n`r`n" + `
 		"Certificato elaborato da`r`n`t$UserName`r`n"
 
-	#---------------------------------------------------------------------------------
+	#------------------------------------------------------------------------------
 	#Si compone la sezione [Extentions] per il file delle opzioni
 	$Extentions= `
 		"[Extensions]" + `
@@ -168,16 +168,16 @@ foreach ($Certificate in $CSV) {
 		"`n_continue_=`"EMail=hostmaster@mps.it&`"" + `
 		"`n_continue_=`"DNS=$($Certificate.CN)"
 
-	#---------------------------------------------------------------------------------
+	#------------------------------------------------------------------------------
 	# si aggiungono eventuali SAN. $MultiSAN potrò essere una stringa o un array
 	if ($MultiSAN -ne '---') {for ($i=0; $i -lt $MultiSAN.Count; $i++) {$Extentions=$Extentions + "&`"`n_continue_=`"DNS=" + $MultiSAN[$i]}}
 
-	#---------------------------------------------------------------------------------
+	#------------------------------------------------------------------------------
 	#Si chiude la stringa delle estensioni con opportune "
 	$Extentions= $Extentions + '"'
 	$Subject= "cn=$($Certificate.CN),ou=Consorzio Operativo Gruppo MPS,o=Banca Monte dei Paschi di Siena S.p.A,c=IT,l=Siena,s=Siena"
 
-	#---------------------------------------------------------------------------------
+	#------------------------------------------------------------------------------
 	#Predisposizione del contenuto del file delle opzioni
 	$OPT= `
 		"[NewRequest]`n" + `
@@ -197,29 +197,29 @@ foreach ($Certificate in $CSV) {
 		$Extentions
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'OPT')) {
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Crea la directory di destinazione
 		New-Item -Path $FolderDestination -ItemType directory   1>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
         # Creazione del file CSV
 	    $Certificate|Export-Csv $FileCSV  1>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
         # Creazione del file DTL con i primi dettagli del certificato
         Set-Content -Path $FileDTL -Value $Details -force  1>$null
 
-        #---------------------------------------------------------------------------------
+        #------------------------------------------------------------------------------
         # Creazione del file OPT delle opzioni per il certificato
         Set-Content -Path $FileOPT -Value $OPT -force  1>$null
 	}
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'CSR')) {
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
         # Creazione del file CSR Certificate Sign Request
 		if (!(Test-Path $FileOPT)) {Throw "Non esiste il file delle opzioni $FileOPT"}
         & certreq -new $FileOPT $FileCSR  1>$null
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
         # Se si richiede un certificato Public ci si passa al record successivo del CSV
 		if (($Certificate.Ambito -eq 'Public-Produzione') -or ($Certificate.Ambito -eq 'Public-NPE')) {
 			Write-Host -Foreground black -background Green "`tDati del certificato salvati in $FolderDestination"
@@ -228,12 +228,12 @@ foreach ($Certificate in $CSV) {
 	}
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'CER')) {
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
         # Firma del certificato
         if (!(Test-Path $FileCSR)) {Throw "Non esiste il Certificate Sign Request $FileCSR"}
         & certreq -submit -config $CertAuth -attrib $Template $FileCSR $FileCER  1>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Si esaminano i dati nel certificato prodotto
 		$FullCertificate= $(& $OpenSSL x509 -in $FileCER -text -noout)  2>$null
 		$NLinea= 0
@@ -282,7 +282,6 @@ foreach ($Certificate in $CSV) {
 			}
 		} while (($NLinea++ -gt $FullCertificate.Count) -or !$Expiration)
 
-
 		switch ($SubCA) {
 			"AXA-Issuing-CA-PR1"										#CA Interna AXA
 				{$RootCA= 'AXA-Enterprise-Root-CA'}
@@ -314,14 +313,14 @@ foreach ($Certificate in $CSV) {
 		$FileRootCA= $NAS + $RootCA + '\' + $RootCA + '.CRT'
 		if (!(Test-Path $FileRootCA)) {Throw "Certificato della RootCA $FileRootCA non trovato: $FileRootCA"}
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Si compone il contenuto informativo per il file TXT
 		$Details= `
 			"Certification SUB Authority`r`n`t" + $SubCA + "`r`n`r`n" + `
 			"Certification Root Authority`r`n`t" + $RootCA + "`r`n`r`n" + `
 			"NotBefore`r`n`t" + $Activation + "`r`n`r`n" + `
 			"NotAfter`r`n`t" + $Expiration + "`r`n"
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
         # Aggiunge al file DTL i dettagli del certificato
         Add-Content -Path $FileDTL -Value $Details -force  1>$null
 
@@ -333,11 +332,11 @@ foreach ($Certificate in $CSV) {
 			$CertificateFolder + "`t" + `
 			$SubCA + "`t" + `
 			$UserName
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
         # Crea il file Record per aggiornare l'inventario dei certificati
         Set-Content -Path $FileRCD -Value $Record -force  1>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Si compone la parte PUBBLICA del certificato con la catena di certificazione
 		if (!(Test-Path $FileCER)) {Throw "Non esiste il file del certificato $FileCER"}
 		$CertPUB= Get-Content -Path $FileCER
@@ -351,7 +350,7 @@ foreach ($Certificate in $CSV) {
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'PFX')) {
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Acquisizione del certificato nello storage personale
 		& certreq -accept $FileCER  1>$null
 
@@ -362,22 +361,22 @@ foreach ($Certificate in $CSV) {
 				{$Certificate.PassWD='12345678'}
 		}
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Si compone il contenuto informativo per il file TXT con la password
 		$Details= "Password`r`n`t$($Certificate.PassWD)"
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
         # Aggiunge al file DTL i dettagli del certificato
         Add-Content -Path $FileDTL -Value $Details -force  1>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Export del certificato in formato PFX con password
 		& certutil -user -p $Certificate.PassWD -exportPFX my $Certificate.CN $FilePFX  1>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Si cancella il certificato dallo storage "my" dopo che è stato esportato
 		& certutil -delstore -user my $Certificate.CN  1>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Si esaminano i dati nel certificato prodotto se la $SubCA non è già stata inizializzata
 		# nell'elaborazione del CER
 		if (!$SubCA) {
@@ -420,17 +419,17 @@ foreach ($Certificate in $CSV) {
 			if (!(Test-Path $FileRootCA)) {Throw "Certificato della RootCA $FileRootCA non trovato: $FileRootCA"}
 		}
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Estrazione della chiave privata del certificato in formato RSA dal PFX
 		& $OpenSSL rsa -in $FilePFX -inform PKCS12 -passin pass:$($Certificate.PassWD) -out $FileRSA *>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Estrazione della chiave privata del certificato in formato X509 PEM dal PFX
-		#=================================================================================
+		#==============================================================================
 		# Toglierre l'opzione NODES che estrae la chiave privata in chiaro
 		& $OpenSSL pkcs12 -in $FilePFX -out $FTmpPRV -clcerts -nodes -password pass:$($Certificate.PassWD)  *>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Si compone la parte PRIVATA del certificato con la catena di certificazione
 		if (!(Test-Path $FTmpPRV)) {Throw "Non è stato prodotto il file con la chiave privata $FTmpPRV"}
 		$CertPRV= Get-Content -Path $FTmpPRV
@@ -440,7 +439,7 @@ foreach ($Certificate in $CSV) {
 		$CertPRV= $CertPRV + $(Get-Content -Path $FileRootCA)
 		$CertPRV | Set-Content -Path $FilePRV -force  1>$null
 
-		#---------------------------------------------------------------------------------
+		#------------------------------------------------------------------------------
 		# Si crea il Java Key Store con il certificato Alias= $DNSName
 		if ($(keytool -list -storetype pkcs12 -keystore $FilePFX -deststorepass $Certificate.PassWD)[6] -match "(.*?),.*") {
 			$CertificateAlias= $Matches[1]
@@ -455,13 +454,13 @@ foreach ($Certificate in $CSV) {
 		keytool -import -alias $RootCA -file $FileRootCA -trustcacerts -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt  *>$null
 	}
 
-	#---------------------------------------------------------------------------------
+	#------------------------------------------------------------------------------
 	# Si Cancellano i file non necessari
     if (Test-Path $FileRSP) {Remove-Item -Path $FileRSP}
     if (Test-Path $FTmpPUB) {Remove-Item -Path $FTmpPUB}
     if (Test-Path $FTmpPRV) {Remove-Item -Path $FTmpPRV}
 
-    #---------------------------------------------------------------------------------
+    #------------------------------------------------------------------------------
     # Se il certificato è al primo rilascio ne viene fatta una copia anche nella directory padre di R1
     if ($Release -eq 1) {
         if (Test-Path $FilePUB) {Copy-Item -Path $FilePUB -Destination "$CertificateFolder"}
