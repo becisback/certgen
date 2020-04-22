@@ -345,7 +345,12 @@ foreach ($Certificate in $CSV) {
 		$CertPUB= $CertPUB + "`r`n`r`n"
 		$CertPUB= $CertPUB + $(Get-Content -Path $FileRootCA)
 		$CertPUB | Set-Content -Path $FilePUB -force  1>$null
-
+		if (SingleStep -eq 'CER') {
+			#------------------------------------------------------------------------------
+			# Si aggiungono i CER della catena di certificazione insieme agli altri file
+			Copy-Item -path $FileSubCA -Destination $FolderDestination
+			Copy-Item -path $FileRootCA -Destination $FolderDestination
+		}
     }
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'PFX')) {
