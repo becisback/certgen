@@ -1,7 +1,7 @@
 ﻿# Utility per la creazione di certificati V.3
 # F.Beconcini 20200419
 
-$Versione='20200421'
+$Versione='20200423'
 
 $Account= get-item "ENV:\USERNAME"
 switch ($Account.Value) {
@@ -55,7 +55,7 @@ foreach ($Certificate in $CSV) {
             $NAS= "\\nassi1.local\certificati\ATTIVI\"
         }
         "Public-NPE" {
-            $NAS= "\\nastf2.local\certificati\attivi\"
+            $NAS= "\\nastf2.testfactory.copergmps\certificati\attivi\"
         }
         "Local" {
             $NAS= "\\nassi1.local\certificati\ATTIVI\"
@@ -77,7 +77,7 @@ foreach ($Certificate in $CSV) {
 			if ($Certificate.SHA -ne "SHA256") {Throw "`tAlgortmo SHA $($Certificate.SHA) non valido per $($Certificate.Ambiente)`r`n"}
 		}
         "NPE" {
-            $NAS= "\\nastf2.local\certificati\attivi\"
+            $NAS= "\\nastf2.testfactory.copergmps\certificati\attivi\"
             $CertAuth= "SE001000456751.testfactory.copergmps\SUBMPS1-TF"
             $Template= 'CertificateTemplate:UnixComp2048'
 			#if ($Certificate.SHA -ne "SHA256") {Throw "`tAlgortmo SHA $($Certificate.SHA) non valido per $($Certificate.Ambiente)`r`n"}
@@ -106,7 +106,7 @@ foreach ($Certificate in $CSV) {
 		Write-Host -Foreground black -BackgroundColor Red "`tNon è possibile creare il certificato $($Certificate.CN) partendo dall'ambiente di Produzione"
 		continue
 	}
-	elseif (($AmbienteExe -eq 'PRODUZIONE') -and ($NAS -eq "\\nastf2.local\certificati\ATTIVI\")) {
+	elseif (($AmbienteExe -eq 'PRODUZIONE') -and ($NAS -eq "\\nastf2.testfactory.copergmps\certificati\ATTIVI\")) {
 		Write-Host -Foreground black -BackgroundColor Red "`tNon è possibile creare il certificato $($Certificate.CN) partendo dall'ambiente NPE"
 		continue
 	}
