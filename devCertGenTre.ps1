@@ -7,6 +7,7 @@ $Account= get-item "ENV:\USERNAME"
 switch ($Account.Value) {
 	"T000386X" {$UserName= "Beconcini"}
 	"S540061X" {$UserName= "Mannoni"}
+	"S345997X" {$UserName= "Paradisi"}
 	default {$UserName= "Unknown"}
 }
 
@@ -346,7 +347,7 @@ foreach ($Certificate in $CSV) {
 		$CertPUB= $CertPUB + $(Get-Content -Path $FileRootCA)
 		$CertPUB | Set-Content -Path $FilePUB -force  1>$null
 
-		if (SingleStep -eq 'CER') {
+		if ($SingleStep -eq 'CER') {
 			#------------------------------------------------------------------------------
 			# Solo per certificati prodotti a partire da CSR si aggiungono i CER della 
 			# catena di certificazione insieme agli altri file
@@ -456,9 +457,9 @@ foreach ($Certificate in $CSV) {
 		keytool -importkeystore `
 			-srcstoretype pkcs12 -srckeystore $FilePFX -srcstorepass $Certificate.PassWD -srcalias $CertificateAlias `
 			-deststoretype jks -destkeystore $FileJKS -deststorepass $Certificate.PassWD -destalias $Certificate.CN `
-			-noprompt
-		keytool -import -alias $SubCA -file $FileSubCA -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt  *>$null
-		keytool -import -alias $RootCA -file $FileRootCA -trustcacerts -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt  *>$null
+			-noprompt *>null 
+		keytool -import -alias $SubCA -file $FileSubCA -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt *>null 
+		keytool -import -alias $RootCA -file $FileRootCA -trustcacerts -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt *>null 
 	}
 
 	#------------------------------------------------------------------------------
