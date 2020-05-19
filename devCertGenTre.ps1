@@ -8,7 +8,7 @@ switch ($Account.Value) {
 	"T000386X" {$UserName= "Beconcini"}
 	"S540061X" {$UserName= "Mannoni"}
 	"S345997X" {$UserName= "Paradisi"}
-	default {$UserName= "Unknown"}
+	default {$UserName= $Account.Value}
 }
 
 . (".\Library.ps1")
@@ -98,17 +98,18 @@ foreach ($Certificate in $CSV) {
 		'SYSPROD' {$AmbienteExe= 'PRODUZIONE'}
 		'CODING' {$AmbienteExe= 'NPE'}
 		'TFSTRUCT' {$AmbienteExe= 'NPE'}
-		default {Throw "Non identificato l'ambiente operativo Produzione/NPE"}
+		default {Throw "Non è stato possibile identificare l'ambiente operativo Produzione/NPE"}
 	}
 
 	#------------------------------------------------------------------------------
 	# Verifica che la macchina di esecuzione sia consistente con l'ambiente operativo corrente
+	# L'errore non è bloccante e si procede con il certificato successivo
 	if (($AmbienteExe -eq 'NPE') -and ($NAS -eq "\\nassi1.local\certificati\ATTIVI\")) {
-		Write-Host -Foreground black -BackgroundColor Red "`tNon è possibile creare il certificato $($Certificate.CN) partendo dall'ambiente di Produzione"
+		Write-Host -Foreground black -BackgroundColor Red "`tNon sarà processato il certificato $($Certificate.CN) partendo dall'ambiente di Produzione"
 		continue
 	}
 	elseif (($AmbienteExe -eq 'PRODUZIONE') -and ($NAS -eq "\\nastf2.testfactory.copergmps\certificati\ATTIVI\")) {
-		Write-Host -Foreground black -BackgroundColor Red "`tNon è possibile creare il certificato $($Certificate.CN) partendo dall'ambiente NPE"
+		Write-Host -Foreground black -BackgroundColor Red "`tNon sarà processato il certificato $($Certificate.CN) partendo dall'ambiente NPE"
 		continue
 	}
 
@@ -122,14 +123,14 @@ foreach ($Certificate in $CSV) {
 		while (Test-Path $($CertificateFolder + "R$Release\")) {$Release++}
 	}
 
-	if ($SingleStep -and ($SingleStep -ne 'OPT') -and ($Release -gt 0)) {
-		#------------------------------------------------------------------------------
-        # Se siamo in SingleStep si lavora nella stessa directory del file CSV
-		$FolderDestination= "$(Split-Path $FileCSVData)\"
-		$Release--
+	if (!$SingleStep -or ($SingleStep -eq 'OPT')) {
+		$FolderDestination= $CertificateFolder + "R$Release\"
 	}
 	else {
-		$FolderDestination= $CertificateFolder + "R$Release\"
+		#------------------------------------------------------------------------------
+        # Se siamo in SingleStep, ma non OPT, si lavora nella stessa directory del file CSV
+		$FolderDestination= "$(Split-Path $FileCSVData)\"
+		$Release--
 	}
 
 	#------------------------------------------------------------------------------
@@ -150,53 +151,6 @@ foreach ($Certificate in $CSV) {
 	$FileRCD= $FolderDestination + $Certificate.CN + ".RCD"	#File Record per aggiornare l'inventario
 
 
-	#------------------------------------------------------------------------------
-	# Si compone il contenuto informativo per il file TXT
-	$Details=  `
-		"# CertGenTre v.$Versione   $TimeStamp`r`n`r`n" + `
-		"Codice APM`r`n`t$($Certificate.CodiceAPM)`r`n`r`n" + `
-		"Common Name`r`n`t$($Certificate.CN)`r`n`r`n" + `
-		"Subject Alternative Names`r`n`t$MultiSAN`r`n`r`n" + `
-		"Algoritmo SHA`r`n`t$($Certificate.SHA)`r`n`r`n" + `
-		"Certificate Folder`r`n`t$FolderDestination`r`n`r`n" + `
-		"Certificato elaborato da`r`n`t$UserName`r`n"
-
-	#------------------------------------------------------------------------------
-	#Si compone la sezione [Extentions] per il file delle opzioni
-	$Extentions= `
-		"[Extensions]" + `
-		"`n2.5.29.17=`"{text}`"" + `
-		"`n_continue_=`"EMail=hostmaster@mps.it&`"" + `
-		"`n_continue_=`"DNS=$($Certificate.CN)"
-
-	#------------------------------------------------------------------------------
-	# si aggiungono eventuali SAN. $MultiSAN potrò essere una stringa o un array
-	if ($MultiSAN -ne '---') {for ($i=0; $i -lt $MultiSAN.Count; $i++) {$Extentions=$Extentions + "&`"`n_continue_=`"DNS=" + $MultiSAN[$i]}}
-
-	#------------------------------------------------------------------------------
-	#Si chiude la stringa delle estensioni con opportune "
-	$Extentions= $Extentions + '"'
-	$Subject= "cn=$($Certificate.CN),ou=Consorzio Operativo Gruppo MPS,o=Banca Monte dei Paschi di Siena S.p.A,c=IT,l=Siena,s=Siena"
-
-	#------------------------------------------------------------------------------
-	#Predisposizione del contenuto del file delle opzioni
-	$OPT= `
-		"[NewRequest]`n" + `
-		"Subject=`"$Subject,PostalCode=53100`"" + `
-		"`nExportable=TRUE" + `
-		"`nKeyLength=2048" + `
-		"`nKeySpec=1" + `
-		"`nRequestType=`"PKCS10`"" + `
-		"`nKeyUsage=0xA0" + `
-		"`nFriendlyName=`"$($Certificate.CN)`"" + `
-		"`nHashAlgorithm=$($Certificate.SHA)" + `
-		"`nSMIME=False" + `
-		"`nUseExistingKeySet=False" + `
-		"`n[EnhancedKeyUsageExtension]" + `
-		"`nOID=1.3.6.1.5.5.7.3.1" + `
-		"`nOID=1.3.6.1.5.5.7.3.2`n" + `
-		$Extentions
-
 	if ((!$SingleStep) -or ($SingleStep -eq 'OPT')) {
 		#------------------------------------------------------------------------------
 		# Crea la directory di destinazione
@@ -207,8 +161,56 @@ foreach ($Certificate in $CSV) {
 	    $Certificate|Export-Csv $FileCSV  1>$null
 
 		#------------------------------------------------------------------------------
+		# Si compone il contenuto informativo per il file TXT
+		$Details=  `
+			"# CertGenTre v.$Versione   $TimeStamp`r`n`r`n" + `
+			"Codice APM`r`n`t$($Certificate.CodiceAPM)`r`n`r`n" + `
+			"Common Name`r`n`t$($Certificate.CN)`r`n`r`n" + `
+			"Subject Alternative Names`r`n`t$MultiSAN`r`n`r`n" + `
+			"Algoritmo SHA`r`n`t$($Certificate.SHA)`r`n`r`n" + `
+			"Certificate Folder`r`n`t$FolderDestination`r`n`r`n" + `
+			"Certificato elaborato da`r`n`t$UserName`r`n"
+
+		#------------------------------------------------------------------------------
         # Creazione del file DTL con i primi dettagli del certificato
         Set-Content -Path $FileDTL -Value $Details -force  1>$null
+
+		#------------------------------------------------------------------------------
+		#Si compone la sezione [Extentions] per il file delle opzioni
+		$Extentions= `
+			"[Extensions]" + `
+			"`n2.5.29.17=`"{text}`"" + `
+			"`n_continue_=`"EMail=hostmaster@mps.it&`"" + `
+			"`n_continue_=`"DNS=$($Certificate.CN)"
+
+		#------------------------------------------------------------------------------
+		# si aggiungono eventuali SAN. $MultiSAN potrà essere una stringa o un array
+		if ($MultiSAN -ne '---') {for ($i=0; $i -lt $MultiSAN.Count; $i++) {$Extentions=$Extentions + "&`"`n_continue_=`"DNS=" + $MultiSAN[$i]}}
+
+		#------------------------------------------------------------------------------
+		#Si chiude la stringa delle estensioni con opportune "
+		$Extentions= $Extentions + '"'
+		$Subject= "cn=$($Certificate.CN),ou=Consorzio Operativo Gruppo MPS,o=Banca Monte dei Paschi di Siena S.p.A,c=IT,l=Siena,s=Siena"
+
+		#------------------------------------------------------------------------------
+		#Predisposizione del contenuto del file delle opzioni
+		$OPT= `
+			"[NewRequest]`n" + `
+			"Subject=`"$Subject,PostalCode=53100`"" + `
+			"`nExportable=TRUE" + `
+			"`nKeyLength=2048" + `
+			"`nKeySpec=1" + `
+			"`nRequestType=`"PKCS10`"" + `
+			"`nKeyUsage=0xA0" + `
+			"`nFriendlyName=`"$($Certificate.CN)`"" + `
+			"`nHashAlgorithm=$($Certificate.SHA)" + `
+			"`nSMIME=False" + `
+			"`nUseExistingKeySet=False" + `
+			"`n[EnhancedKeyUsageExtension]" + `
+			"`nOID=1.3.6.1.5.5.7.3.1" + `
+			"`nOID=1.3.6.1.5.5.7.3.2`n" + `
+			$Extentions
+
 
         #------------------------------------------------------------------------------
         # Creazione del file OPT delle opzioni per il certificato
