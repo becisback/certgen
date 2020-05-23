@@ -15,6 +15,12 @@ switch ($Account.Value) {
 
 $FileCSVData= $args[0]
 $SingleStep= $args[1]
+<#
+if (($SingleStep -ne 'CSR') -and ($SingleStep -ne 'CER') -and ($SingleStep -ne 'PFX')) {
+	Throw "Opzione Single Step $SingleStep non valida"
+}
+#>
+
 $Segreto= ''
 
 #------------------------------------------------------------------------------
@@ -124,7 +130,7 @@ foreach ($Certificate in $CSV) {
 		while (Test-Path $($CertificateFolder + "R$Release\")) {$Release++}
 	}
 
-	if (!$SingleStep -or ($SingleStep -eq 'CSR')) {
+	if (!$SingleStep -or ($SingleStep -eq 'OPT')) {
 		$FolderDestination= $CertificateFolder + "R$Release\"
 	}
 	else {
@@ -167,7 +173,7 @@ foreach ($Certificate in $CSV) {
 	# Creazione del file DTL con i primi dettagli del certificato
 	#Set-Content -Path $FileDTL -Value $Details -force  1>$null
 
-	if ((!$SingleStep) -or ($SingleStep -eq 'CSR')) {
+	if ((!$SingleStep) -or ($SingleStep -eq 'OPT')) {
 		#------------------------------------------------------------------------------
 		# Crea la directory di destinazione
 		New-Item -Path $FolderDestination -ItemType directory   1>$null
@@ -216,7 +222,9 @@ foreach ($Certificate in $CSV) {
         #------------------------------------------------------------------------------
         # Creazione del file OPT delle opzioni per il certificato
         Set-Content -Path $FileOPT -Value $OPT -force  1>$null
+	}
 
+	if ((!$SingleStep) -or ($SingleStep -eq 'CSR')) {
 		#------------------------------------------------------------------------------
         # Creazione del file CSR Certificate Sign Request
 		if (!(Test-Path $FileOPT)) {Throw "Non esiste il file delle opzioni $FileOPT"}
