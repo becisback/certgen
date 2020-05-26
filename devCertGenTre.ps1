@@ -1,7 +1,7 @@
 ﻿# Utility per la creazione di certificati V.3
-# F.Beconcini 20200522
+# F.Beconcini 20200526
 
-$Versione='20200522'
+$Versione='20200526'
 
 $Account= get-item "ENV:\USERNAME"
 switch ($Account.Value) {
@@ -21,8 +21,6 @@ if (($SingleStep -ne 'CSR') -and ($SingleStep -ne 'CER') -and ($SingleStep -ne '
 }
 #>
 
-$Segreto= ''
-
 #------------------------------------------------------------------------------
 # Se non esiste il file CSV si esce con un messaggio d'errore
 if (!(Test-Path $FileCSVData)) {Throw "Il file dei dati $FileCSVData non esiste"}
@@ -37,9 +35,12 @@ foreach ($Certificate in $CSV) {
     $TimeStamp= Get-Date
 
 	#------------------------------------------------------------------------------
-	# Si azzera la SubCA perchè viene riutilizzato il valore non inizializzandolo
-	# per evitare la rilettura del certificato nell'elaborazione del PFX
+	# Si azzerano le variabili il cui valore ha una funzione di stato che viene riutilizzato
+	# per evitare la rilettura del certificato nell'elaborazione del PFX e per inserire 
+	# la riga con la la password nel file dei dettagli
 	$SubCA= ''
+	$Segreto= ''
+
 
     $CertCount++
     #$PerC= 100/$CSV.Count*($CertCount-1)
@@ -57,7 +58,7 @@ foreach ($Certificate in $CSV) {
     if (!$Certificate.SHA) {$Certificate.SHA='SHA256'}
 
     #------------------------------------------------------------------------------
-    #Diverse disposizioni a seconda dell'Ambito di sicurezza in questione
+    # Diverse disposizioni a seconda dell'Ambito di lavoro in questione
     switch ($Certificate.Ambito) {
         "Public-Produzione" {
             $NAS= "\\nassi1.local\certificati\ATTIVI\"
@@ -147,7 +148,6 @@ foreach ($Certificate in $CSV) {
     $FileCER= $FolderDestination + $Certificate.CN + ".CER"	#Certificato prodotto dalla CA
     $FileRSP= $FolderDestination + $Certificate.CN + ".rsp"	#File con le risposte della CA
     $FilePFX= $FolderDestination + $Certificate.CN + ".PFX"	#File PKCS#12 con chiave pubblica e privata
-    #$FTmpPUB= $FolderDestination + $Certificate.CN + "_PUB_tmp.crt"	#File temporaneo con la chiave PUBBLICA
     $FTmpPRV= $FolderDestination + $Certificate.CN + "_PRV_tmp.key"	#File temporaneo con la chiave PRIVATA
     $FilePUB= $FolderDestination + $Certificate.CN + "_PUB.CRT"	#File con la chiave PUBBLICA e KeyChain X509 PEM
     $FilePRV= $FolderDestination + $Certificate.CN + "_PRV.KEY"	#File con la chiave PRIVATA e KeyChain X509 PEM
@@ -227,7 +227,10 @@ foreach ($Certificate in $CSV) {
 	if ((!$SingleStep) -or ($SingleStep -eq 'CSR')) {
 		#------------------------------------------------------------------------------
         # Creazione del file CSR Certificate Sign Request
-		if (!(Test-Path $FileOPT)) {Throw "Non esiste il file delle opzioni $FileOPT"}
+		if (!(Test-Path $FileOPT)) {
+			Write-Host -Foreground black -background Red "`tNon esiste il file delle opzioni $FileOPT"
+			continue
+		}
         & certreq -new $FileOPT $FileCSR  1>$null
 		#------------------------------------------------------------------------------
         # Se si richiede un certificato Public ci si passa al record successivo del CSV
@@ -241,7 +244,10 @@ foreach ($Certificate in $CSV) {
 	if ((!$SingleStep) -or ($SingleStep -eq 'CER')) {
 		#------------------------------------------------------------------------------
         # Firma del certificato
-        if (!(Test-Path $FileCSR)) {Throw "Non esiste il Certificate Sign Request $FileCSR"}
+        if (!(Test-Path $FileCSR)) {
+			Write-Host -Foreground black -background Red "`tNon esiste il Certificate Sign Request $FileCSR"
+			continue
+		}
         & certreq -submit -config $CertAuth -attrib $Template $FileCSR $FileCER  1>$null
 
 		#------------------------------------------------------------------------------
@@ -344,6 +350,10 @@ foreach ($Certificate in $CSV) {
     }
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'PFX')) {
+		if (!(Test-Path $FileCER)) {
+			Write-Host -Foreground black -background Red "`tNon esiste il file delcertificato $FileCER"
+			continue
+		}
 
 		#------------------------------------------------------------------------------
 		# Acquisizione del certificato nello storage personale e ricombinazione con la 
@@ -473,6 +483,21 @@ foreach ($Certificate in $CSV) {
 		$CertPRV | Set-Content -Path $FilePRV -force  1>$null
 
 		#------------------------------------------------------------------------------
+		# Se non esiste già il certificato pubblico si compone la parte PUBBLICA del 
+		# certificato con la catena di certificazione
+		if (!(Test-Path $FileCER)) {
+			Throw "Non esiste il file del certificato $FileCER"
+		}
+		else {
+			$CertPUB= Get-Content -Path $FileCER
+			$CertPUB= $CertPUB + "`r`n`r`n"
+			$CertPUB= $CertPUB + $(Get-Content -Path $FileSubCA)
+			$CertPUB= $CertPUB + "`r`n`r`n"
+			$CertPUB= $CertPUB + $(Get-Content -Path $FileRootCA)
+			$CertPUB | Set-Content -Path $FilePUB -force  1>$null
+		}
+		
+		#------------------------------------------------------------------------------
 		# Si crea il Java Key Store con il certificato Alias= $DNSName
 		if ($(keytool -list -storetype pkcs12 -keystore $FilePFX -deststorepass $Certificate.PassWD)[6] -match "(.*?),.*") {
 			$CertificateAlias= $Matches[1]
@@ -490,7 +515,6 @@ foreach ($Certificate in $CSV) {
 	#------------------------------------------------------------------------------
 	# Si Cancellano i file non necessari
     if (Test-Path $FileRSP) {Remove-Item -Path $FileRSP}
-    #if (Test-Path $FTmpPUB) {Remove-Item -Path $FTmpPUB}
     if (Test-Path $FTmpPRV) {Remove-Item -Path $FTmpPRV}
 
     #------------------------------------------------------------------------------
@@ -526,10 +550,7 @@ foreach ($Certificate in $CSV) {
 	# Crea il file Record per aggiornare l'inventario dei certificati
 	Set-Content -Path $FileRCD -Value $Record -force  1>$null
 
-
-	
     Write-Host -Foreground black -background Green "`tDati del certificato salvati in $FolderDestination"
-
 }
 Write-Host
 

@@ -5,9 +5,6 @@ Utility per l'analisi della scadenza dei certificati #>
 
 $OutputFile= "C:\Users\T000386\Documents\bin\certificati\CertScan.CSV"
 
-$PathList=(`
-    ".\ATTIVI" `
-    )
 
 $PathList=(`
     "\\nastf2\certificati\ATTIVI", `
@@ -17,6 +14,9 @@ $PathList=(`
     "\\nassi1.local\certificati\CertificatiInterni" `
     )
 
+$PathList=(`
+    "C:\Users\T000386\Documents\TEMP\Certificati" `
+    )
 
 
 
@@ -56,7 +56,8 @@ foreach ($Path in $Pathlist) {
             Expiration='***'
             Signature= '***'
             SAN= '***'
-            }
+            Serial= '***'
+			}
         
         #----------------------------------------------------------------------------
         #legge la posizione del certificato nel file system
@@ -69,7 +70,10 @@ foreach ($Path in $Pathlist) {
         $NLinea= 0
         foreach ($Linea in $FullCertificato) {
             $NLinea++
-            if ($Linea -match 'Autorit.* emittente:') {
+			
+			if ($Linea -match 'Numero di serie: (.*)') {$Certificato.Serial=  $Matches.1}
+			
+			if ($Linea -match 'Autorit.* emittente:') {
                 $Certificato.CA= $FullCertificato[$NLinea].Substring(7, $FullCertificato[$NLinea].Length -7)
                 }
 
@@ -94,7 +98,7 @@ foreach ($Path in $Pathlist) {
             }
         #----------------------------------------------------------------------------
         #aggiunge un record nel file di output
-        $Record= "$($Certificato.CA), $($Certificato.CN), $($Certificato.SAN), $($Certificato.Expiration), $($Certificato.Directory)"
+        $Record= "$($Certificato.Serial), $($Certificato.CA), $($Certificato.CN), $($Certificato.SAN), $($Certificato.Expiration), $($Certificato.Directory)"
         Add-Content $OutputFile $Record
         Write-Host "$CertCount";
         }
