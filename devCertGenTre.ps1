@@ -1,7 +1,7 @@
 ﻿# Utility per la creazione di certificati V.3
-# F.Beconcini 20200526
+# F.Beconcini 20200610
 
-$Versione='20200526'
+$Versione='20200610'
 
 $Account= get-item "ENV:\USERNAME"
 switch ($Account.Value) {
@@ -21,6 +21,8 @@ if (($SingleStep -ne 'CSR') -and ($SingleStep -ne 'CER') -and ($SingleStep -ne '
 }
 #>
 
+$Segreto= ''
+
 #------------------------------------------------------------------------------
 # Se non esiste il file CSV si esce con un messaggio d'errore
 if (!(Test-Path $FileCSVData)) {Throw "Il file dei dati $FileCSVData non esiste"}
@@ -35,12 +37,9 @@ foreach ($Certificate in $CSV) {
     $TimeStamp= Get-Date
 
 	#------------------------------------------------------------------------------
-	# Si azzerano le variabili il cui valore ha una funzione di stato che viene riutilizzato
-	# per evitare la rilettura del certificato nell'elaborazione del PFX e per inserire 
-	# la riga con la la password nel file dei dettagli
+	# Si azzera la SubCA perchè viene riutilizzato il valore non inizializzandolo
+	# per evitare la rilettura del certificato nell'elaborazione del PFX
 	$SubCA= ''
-	$Segreto= ''
-
 
     $CertCount++
     #$PerC= 100/$CSV.Count*($CertCount-1)
@@ -58,7 +57,7 @@ foreach ($Certificate in $CSV) {
     if (!$Certificate.SHA) {$Certificate.SHA='SHA256'}
 
     #------------------------------------------------------------------------------
-    # Diverse disposizioni a seconda dell'Ambito di lavoro in questione
+    #Diverse disposizioni a seconda dell'Ambito di sicurezza in questione
     switch ($Certificate.Ambito) {
         "Public-Produzione" {
             $NAS= "\\nassi1.local\certificati\ATTIVI\"
@@ -148,6 +147,7 @@ foreach ($Certificate in $CSV) {
     $FileCER= $FolderDestination + $Certificate.CN + ".CER"	#Certificato prodotto dalla CA
     $FileRSP= $FolderDestination + $Certificate.CN + ".rsp"	#File con le risposte della CA
     $FilePFX= $FolderDestination + $Certificate.CN + ".PFX"	#File PKCS#12 con chiave pubblica e privata
+    #$FTmpPUB= $FolderDestination + $Certificate.CN + "_PUB_tmp.crt"	#File temporaneo con la chiave PUBBLICA
     $FTmpPRV= $FolderDestination + $Certificate.CN + "_PRV_tmp.key"	#File temporaneo con la chiave PRIVATA
     $FilePUB= $FolderDestination + $Certificate.CN + "_PUB.CRT"	#File con la chiave PUBBLICA e KeyChain X509 PEM
     $FilePRV= $FolderDestination + $Certificate.CN + "_PRV.KEY"	#File con la chiave PRIVATA e KeyChain X509 PEM
@@ -249,6 +249,13 @@ foreach ($Certificate in $CSV) {
 			continue
 		}
         & certreq -submit -config $CertAuth -attrib $Template $FileCSR $FileCER  1>$null
+    }
+
+	if ((!$SingleStep) -or ($SingleStep -eq 'CRT')) {
+        if (!(Test-Path $FileCER)) {
+			Write-Host -Foreground black -background Red "`tNon esiste il Certificato firmato $FileCER"
+			continue
+		}
 
 		#------------------------------------------------------------------------------
 		# Si esaminano i dati nel certificato prodotto
@@ -300,51 +307,63 @@ foreach ($Certificate in $CSV) {
 		} while (($NLinea++ -gt $FullCertificate.Count) -or !$Expiration)
 
 		switch ($SubCA) {
-			"AXA-Issuing-CA-PR1"										#CA Interna AXA
-				{$RootCA= 'AXA-Enterprise-Root-CA'}
+			"AXA-Issuing-CA-PR1" {										#CA Interna AXA
+				$IntermediateCA=''
+				$RootCA= 'AXA-Enterprise-Root-CA'}
 
-			"Sectigo RSA Extended Validation Secure Server CA"			#CA Sectigo per i certificati Extended Validation
-				{$RootCA= 'USERTrust RSA Certification Authority'}
+			"Sectigo RSA Extended Validation Secure Server CA" {		#CA Sectigo per i certificati Extended Validation
+				$IntermediateCA='USERTrust RSA Certification Authority'
+				$RootCA= 'AAA Certificate Services'}
+				
+			"Sectigo RSA Organization Validation Secure Server CA" {  	#CA Sectigo per i certificati MultiSAN
+				$IntermediateCA='USERTrust RSA Certification Authority'
+				$RootCA= 'AAA Certificate Services'}
 
-			"Sectigo RSA Organization Validation Secure Server CA"  	#CA Sectigo per i certificati MultiSAN
-				{$RootCA= 'USERTrust RSA Certification Authority'}
+			"USERTrust RSA Organization Validation Secure Server CA" {	#CA Sectigo per i certificati RealWEB
+				$IntermediateCA='USERTrust RSA Certification Authority'
+				$RootCA= 'AAA Certificate Services'}
 
-			"USERTrust RSA Organization Validation Secure Server CA"	#CA Sectigo per i certificati RealWEB
-				{$RootCA= 'USERTrust RSA Certification Authority'}
+			"SUB01-GMPS" {												#CA MPS Global per la intranet
+				$IntermediateCA=''
+				$RootCA= 'RootCA-GMPS'}
 
-			"SUB01-GMPS"												#CA MPS Global per la intranet
-				{$RootCA= 'RootCA-GMPS'}
+			"SUBMPS1-TF" {												#CA MPS TestFactory
+				$IntermediateCA=''
+				$RootCA= 'ROOTMPS-TF'}
 
-			"SUBMPS1-TF"												#CA MPS TestFactory
-				{$RootCA= 'ROOTMPS-TF'}
-
-			"SUB01-LOCAL G2"											#CA MPS Local per la intranet
-				{$RootCA= 'RootCA-GMPS'}
+			"SUB01-LOCAL G2" {											#CA MPS Local per la intranet
+				$IntermediateCA=''
+				$RootCA= 'RootCA-GMPS'}
 
 			default {Throw "`tSubCA non censita nel programma: $SubCA`r`n"}
 		}
 
 		$FileSubCA= $NAS + $SubCA + '\' + $SubCA + '.CRT'
-		if (!(Test-Path $FileSubCA)) {Throw "Certificato della SubCA $FileSubCA non trovato: $FileSubCA"}
+		if (!(Test-Path $FileSubCA)) {Throw "Certificato della SubCA $SubCA non trovato: $FileSubCA"}
+		
+		if ($IntermediateCA -ne '') {
+			$FileIntermediateCA= $NAS + $IntermediateCA + '\' + $IntermediateCA + '.CRT'
+			if (!(Test-Path $FileSubCA)) {Throw "Certificato della IntermediateCA di $SubCA non trovato: $FileIntermediateCA"}
+		}
 
 		$FileRootCA= $NAS + $RootCA + '\' + $RootCA + '.CRT'
-		if (!(Test-Path $FileRootCA)) {Throw "Certificato della RootCA $FileRootCA non trovato: $FileRootCA"}
+		if (!(Test-Path $FileRootCA)) {Throw "Certificato della RootCA di $SubCA non trovato: $FileRootCA"}
 
 		#------------------------------------------------------------------------------
 		# Si compone la parte PUBBLICA del certificato con la catena di certificazione
 		if (!(Test-Path $FileCER)) {Throw "Non esiste il file del certificato $FileCER"}
 		$CertPUB= Get-Content -Path $FileCER
-		$CertPUB= $CertPUB + "`r`n`r`n"
-		$CertPUB= $CertPUB + $(Get-Content -Path $FileSubCA)
-		$CertPUB= $CertPUB + "`r`n`r`n"
-		$CertPUB= $CertPUB + $(Get-Content -Path $FileRootCA)
+		$CertPUB= $CertPUB + "`r`n`r`n" + $(Get-Content -Path $FileSubCA)
+		if ($IntermediateCA -ne '') {$CertPUB= $CertPUB + "`r`n`r`n" + $(Get-Content -Path $FileIntermediateCA)}
+		$CertPUB= $CertPUB + "`r`n`r`n" + $(Get-Content -Path $FileRootCA)
 		$CertPUB | Set-Content -Path $FilePUB -force  1>$null
 
-		if ($SingleStep -eq 'CER') {
+		if ($SingleStep -eq 'CRT') {
 			#------------------------------------------------------------------------------
 			# Solo per certificati prodotti a partire dal CSR si aggiungono i CER della 
 			# catena di certificazione insieme agli altri file
 			Copy-Item -path $FileSubCA -Destination $FolderDestination
+			if ($IntermediateCA -ne '') {Copy-Item -path $FileIntermediateCA -Destination $FolderDestination}
 			Copy-Item -path $FileRootCA -Destination $FolderDestination
 		}
     }
@@ -394,8 +413,8 @@ foreach ($Certificate in $CSV) {
 		# nell'elaborazione del CER
 		if (!$SubCA) {
 			$FullCertificate= $(& $OpenSSL x509 -in $FileCER -text -noout)  2>$null
-
 			$NLinea= 0
+
 			do {
 				if ($FullCertificate[$NLinea] -match 'Issuer: C=.+, CN=(.+)') {$SubCA= $Matches.1}
 			} while (($NLinea++ -gt $FullCertificate.Count) -or !$SubCA)
@@ -441,62 +460,58 @@ foreach ($Certificate in $CSV) {
 			} while (($NLinea++ -gt $FullCertificate.Count) -or !$Expiration)
 
 			switch ($SubCA) {
-				"AXA-Issuing-CA-PR1"										#CA Interna AXA
-					{$RootCA= 'AXA-Enterprise-Root-CA'}
+				"AXA-Issuing-CA-PR1" {										#CA Interna AXA
+					$IntermediateCA=''
+					$RootCA= 'AXA-Enterprise-Root-CA'}
 
-				"Sectigo RSA Extended Validation Secure Server CA"			#CA Sectigo per i certificati Extended Validation
-					{$RootCA= 'USERTrust RSA Certification Authority'}
+				"Sectigo RSA Extended Validation Secure Server CA" {		#CA Sectigo per i certificati Extended Validation
+					$IntermediateCA=''
+					$RootCA= 'USERTrust RSA Certification Authority'}
 
-				"Sectigo RSA Organization Validation Secure Server CA"  	#CA Sectigo per i certificati MultiSAN
-					{$RootCA= 'USERTrust RSA Certification Authority'}
+				"Sectigo RSA Organization Validation Secure Server CA" {  	#CA Sectigo per i certificati MultiSAN
+					$IntermediateCA=''
+					$RootCA= 'USERTrust RSA Certification Authority'}
 
-				"USERTrust RSA Organization Validation Secure Server CA"	#CA Sectigo per i certificati RealWEB
-					{$RootCA= 'USERTrust RSA Certification Authority'}
+				"USERTrust RSA Organization Validation Secure Server CA" {	#CA Sectigo per i certificati RealWEB
+					$IntermediateCA=''
+					$RootCA= 'USERTrust RSA Certification Authority'}
 
-				"SUB01-GMPS"												#CA MPS Global per la intranet
-					{$RootCA= 'RootCA-GMPS'}
+				"SUB01-GMPS" {												#CA MPS Global per la intranet
+					$IntermediateCA=''
+					$RootCA= 'RootCA-GMPS'}
 
-				"SUBMPS1-TF"												#CA MPS TestFactory
-					{$RootCA= 'ROOTMPS-TF'}
+				"SUBMPS1-TF" {												#CA MPS TestFactory
+					$IntermediateCA=''
+					$RootCA= 'ROOTMPS-TF'}
 
-				"SUB01-LOCAL G2"											#CA MPS Local per la intranet
-					{$RootCA= 'RootCA-GMPS'}
+				"SUB01-LOCAL G2" {											#CA MPS Local per la intranet
+					$IntermediateCA=''
+					$RootCA= 'RootCA-GMPS'}
 
-				default {Throw "`tSubCA non sconosciuta al programma: $SubCA`r`n"}
+				default {Throw "`tSubCA non censita nel programma: $SubCA`r`n"}
 			}
 
 			$FileSubCA= $NAS + $SubCA + '\' + $SubCA + '.CRT'
-			if (!(Test-Path $FileSubCA)) {Throw "Certificato della SubCA $FileSubCA non trovato: $FileSubCA"}
+			if (!(Test-Path $FileSubCA)) {Throw "Certificato della SubCA $SubCA non trovato: $FileSubCA"}
+			
+			if ($IntermediateCA -ne '') {
+				$FileIntermediateCA= $NAS + $IntermediateCA + '\' + $IntermediateCA + '.CRT'
+				if (!(Test-Path $FileSubCA)) {Throw "Certificato della IntermediateCA di $SubCA non trovato: $FileIntermediateCA"}
+			}
 
 			$FileRootCA= $NAS + $RootCA + '\' + $RootCA + '.CRT'
-			if (!(Test-Path $FileRootCA)) {Throw "Certificato della RootCA $FileRootCA non trovato: $FileRootCA"}
+			if (!(Test-Path $FileRootCA)) {Throw "Certificato della RootCA di $SubCA non trovato: $FileRootCA"}
 		}
 
 		#------------------------------------------------------------------------------
 		# Si compone la parte PRIVATA del certificato con la catena di certificazione
 		if (!(Test-Path $FTmpPRV)) {Throw "Non è stato prodotto il file con la chiave privata $FTmpPRV"}
 		$CertPRV= Get-Content -Path $FTmpPRV
-		$CertPRV= $CertPRV + "`r`n`r`n"
-		$CertPRV= $CertPRV + $(Get-Content -Path $FileSubCA)
-		$CertPRV= $CertPRV + "`r`n`r`n"
-		$CertPRV= $CertPRV + $(Get-Content -Path $FileRootCA)
+		$CertPRV= $CertPRV + "`r`n`r`n" + $(Get-Content -Path $FileSubCA)
+		if ($IntermediateCA -ne '') {$CertPRV= $CertPRV + "`r`n`r`n" + $(Get-Content -Path $FileIntermediateCA)}
+		$CertPRV= $CertPRV + "`r`n`r`n" + $(Get-Content -Path $FileRootCA)
 		$CertPRV | Set-Content -Path $FilePRV -force  1>$null
 
-		#------------------------------------------------------------------------------
-		# Se non esiste già il certificato pubblico si compone la parte PUBBLICA del 
-		# certificato con la catena di certificazione
-		if (!(Test-Path $FileCER)) {
-			Throw "Non esiste il file del certificato $FileCER"
-		}
-		else {
-			$CertPUB= Get-Content -Path $FileCER
-			$CertPUB= $CertPUB + "`r`n`r`n"
-			$CertPUB= $CertPUB + $(Get-Content -Path $FileSubCA)
-			$CertPUB= $CertPUB + "`r`n`r`n"
-			$CertPUB= $CertPUB + $(Get-Content -Path $FileRootCA)
-			$CertPUB | Set-Content -Path $FilePUB -force  1>$null
-		}
-		
 		#------------------------------------------------------------------------------
 		# Si crea il Java Key Store con il certificato Alias= $DNSName
 		if ($(keytool -list -storetype pkcs12 -keystore $FilePFX -deststorepass $Certificate.PassWD)[6] -match "(.*?),.*") {
@@ -509,12 +524,15 @@ foreach ($Certificate in $CSV) {
 			-deststoretype jks -destkeystore $FileJKS -deststorepass $Certificate.PassWD -destalias $Certificate.CN `
 			-noprompt *>null 
 		keytool -import -alias $SubCA -file $FileSubCA -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt *>null 
+		if ($IntermediateCA -ne '') {
+			keytool -import -alias $IntermediateCA -file $FileIntermediateCA -trustcacerts -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt *>null}
 		keytool -import -alias $RootCA -file $FileRootCA -trustcacerts -keystore $FileJKS -deststorepass $Certificate.PassWD -noprompt *>null 
 	}
 
 	#------------------------------------------------------------------------------
 	# Si Cancellano i file non necessari
     if (Test-Path $FileRSP) {Remove-Item -Path $FileRSP}
+    #if (Test-Path $FTmpPUB) {Remove-Item -Path $FTmpPUB}
     if (Test-Path $FTmpPRV) {Remove-Item -Path $FTmpPRV}
 
     #------------------------------------------------------------------------------
@@ -550,7 +568,10 @@ foreach ($Certificate in $CSV) {
 	# Crea il file Record per aggiornare l'inventario dei certificati
 	Set-Content -Path $FileRCD -Value $Record -force  1>$null
 
+
+	
     Write-Host -Foreground black -background Green "`tDati del certificato salvati in $FolderDestination"
+
 }
 Write-Host
 
