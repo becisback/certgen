@@ -1,7 +1,7 @@
 ﻿# Utility per la creazione di certificati V.3
-# F.Beconcini 20200610
+# F.Beconcini 20200617
 
-$Versione='20200610'
+$Versione='20200617'
 
 $Account= get-item "ENV:\USERNAME"
 switch ($Account.Value) {
@@ -169,10 +169,6 @@ foreach ($Certificate in $CSV) {
 		"Certificate Folder`r`n`t$FolderDestination`r`n`r`n" + `
 		"Certificato elaborato da`r`n`t$UserName`r`n`r`n"
 
-	#------------------------------------------------------------------------------
-	# Creazione del file DTL con i primi dettagli del certificato
-	#Set-Content -Path $FileDTL -Value $Details -force  1>$null
-
 	if ((!$SingleStep) -or ($SingleStep -eq 'OPT')) {
 		#------------------------------------------------------------------------------
 		# Crea la directory di destinazione
@@ -225,12 +221,13 @@ foreach ($Certificate in $CSV) {
 	}
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'CSR')) {
-		#------------------------------------------------------------------------------
-        # Creazione del file CSR Certificate Sign Request
 		if (!(Test-Path $FileOPT)) {
 			Write-Host -Foreground black -background Red "`tNon esiste il file delle opzioni $FileOPT"
 			continue
 		}
+		
+		#------------------------------------------------------------------------------
+        # Creazione del file CSR Certificate Sign Request
         & certreq -new $FileOPT $FileCSR  1>$null
 		#------------------------------------------------------------------------------
         # Se si richiede un certificato Public ci si passa al record successivo del CSV
@@ -242,12 +239,13 @@ foreach ($Certificate in $CSV) {
 	}
 
 	if ((!$SingleStep) -or ($SingleStep -eq 'CER')) {
-		#------------------------------------------------------------------------------
-        # Firma del certificato
         if (!(Test-Path $FileCSR)) {
 			Write-Host -Foreground black -background Red "`tNon esiste il Certificate Sign Request $FileCSR"
 			continue
 		}
+		
+		#------------------------------------------------------------------------------
+        # Firma del certificato
         & certreq -submit -config $CertAuth -attrib $Template $FileCSR $FileCER  1>$null
     }
 
