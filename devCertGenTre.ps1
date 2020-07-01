@@ -1,10 +1,19 @@
 ﻿# Utility per la creazione di certificati V.3
-# F.Beconcini 20200617
+# F.Beconcini 20200630
 
-$Versione='20200617'
+#------------------------------------------------------------------------------
+# 20200630 F.Beconcini
+# Elaborazione ci certificati wildcard
+#------------------------------------------------------------------------------
+# 20200623 F.Beconcini
+# Produzione di certificato *.P12 in formato PKCS#12
 
-$Account= get-item "ENV:\USERNAME"
-switch ($Account.Value) {
+$Versione='20200630'
+
+$Account= (get-item "ENV:\USERNAME").Value
+$ComputerName= (get-item "ENV:\COMPUTERNAME").Value
+
+switch ($Account) {
 	"T000386X" {$UserName= "Beconcini"}
 	"S540061X" {$UserName= "Mannoni"}
 	"S345997X" {$UserName= "Paradisi"}
@@ -13,15 +22,19 @@ switch ($Account.Value) {
 
 . (".\Library.ps1")
 
+$Segreto= ''
+$SingleStep= ''
+
 $FileCSVData= $args[0]
 $SingleStep= $args[1]
+
 <#
-if (($SingleStep -ne 'CSR') -and ($SingleStep -ne 'CER') -and ($SingleStep -ne 'PFX')) {
+#------------------------------------------------------------------------------
+# Controllo di validità delle opzioni SingleStep
+if (($SingleStep -ne '') -and (($SingleStep -ne 'CSR') -and ($SingleStep -ne 'CER') -and ($SingleStep -ne 'CRT') -and ($SingleStep -ne 'PFX'))) {
 	Throw "Opzione Single Step $SingleStep non valida"
 }
 #>
-
-$Segreto= ''
 
 #------------------------------------------------------------------------------
 # Se non esiste il file CSV si esce con un messaggio d'errore
@@ -48,6 +61,9 @@ foreach ($Certificate in $CSV) {
     if (!$Certificate.CN) {Throw "Errore nel file dei dati $FileCSVData non esiste il CommonName"}
 
 	$Certificate.CN= $Certificate.CN.Trim()
+	if ($Certificate.CN -match '^\*(.+)') {$FileNameSTD= 'wildcard' + $Matches.1}
+	else {$FileNameSTD= $Certificate.CN}
+	
 
     if ($Certificate.SAN)
         {$MultiSAN= @($Certificate.SAN.split(';').trim())}
@@ -93,10 +109,10 @@ foreach ($Certificate in $CSV) {
         default {Throw "`tAmbito $($Certificate.Ambito) non valido`r`n"}
 	}
 
-	$CertificateFolder= $NAS + $Certificate.CN + '\'
+	$CertificateFolder= $NAS + $FileNameSTD + '\'
 
     Write-Host "`n--------------------------------------------------------------------------------"
-    Write-Host "$TimeStamp Elaborazione del certificato #$CertCount $($Certificate.CN)"
+    Write-Host "$TimeStamp Elaborazione del certificato #$CertCount `r`n`t$($Certificate.CN)"
 
 	#------------------------------------------------------------------------------
 	# Si identifica l'ambiente operativo corrente
@@ -112,11 +128,11 @@ foreach ($Certificate in $CSV) {
 	# Verifica che la macchina di esecuzione sia consistente con l'ambiente operativo corrente
 	# L'errore non è bloccante e si procede con il certificato successivo
 	if (($AmbienteExe -eq 'NPE') -and ($NAS -eq "\\nassi1.local\certificati\ATTIVI\")) {
-		Write-Host -Foreground black -BackgroundColor Red "`tNon sarà processato il certificato $($Certificate.CN) partendo dall'ambiente di Produzione"
+		Write-Host -Foreground black -BackgroundColor Red "Non sarà processato il certificato di produzione`r`n`t$($Certificate.CN)`r`npartendo dall'ambiente NPE"
 		continue
 	}
 	elseif (($AmbienteExe -eq 'PRODUZIONE') -and ($NAS -eq "\\nastf2.testfactory.copergmps\certificati\ATTIVI\")) {
-		Write-Host -Foreground black -BackgroundColor Red "`tNon sarà processato il certificato $($Certificate.CN) partendo dall'ambiente NPE"
+		Write-Host -Foreground black -BackgroundColor Red "Non sarà processato il certificato NPE`r`n`t$($Certificate.CN)`r`npartendo dall'ambiente di Produzione"
 		continue
 	}
 
@@ -142,20 +158,20 @@ foreach ($Certificate in $CSV) {
 
 	#------------------------------------------------------------------------------
 	# Si preparano le variabili per i nomi dei file
-    $FileOPT= $FolderDestination + $Certificate.CN + ".OPT"	#File delle opzioni per produrre il CSR
-    $FileCSR= $FolderDestination + $Certificate.CN + ".CSR"	#File Certificate Sign Request X509 PEM
-    $FileCER= $FolderDestination + $Certificate.CN + ".CER"	#Certificato prodotto dalla CA
-    $FileRSP= $FolderDestination + $Certificate.CN + ".rsp"	#File con le risposte della CA
-    $FilePFX= $FolderDestination + $Certificate.CN + ".PFX"	#File PKCS#12 con chiave pubblica e privata
-    #$FTmpPUB= $FolderDestination + $Certificate.CN + "_PUB_tmp.crt"	#File temporaneo con la chiave PUBBLICA
-    $FTmpPRV= $FolderDestination + $Certificate.CN + "_PRV_tmp.key"	#File temporaneo con la chiave PRIVATA
-    $FilePUB= $FolderDestination + $Certificate.CN + "_PUB.CRT"	#File con la chiave PUBBLICA e KeyChain X509 PEM
-    $FilePRV= $FolderDestination + $Certificate.CN + "_PRV.KEY"	#File con la chiave PRIVATA e KeyChain X509 PEM
-	$FileDTL= $FolderDestination + $Certificate.CN + ".TXT"	#File di testo con i dettagli del certificato
-    $FileCSV= $FolderDestination + $Certificate.CN + ".CSV"	#File CSV necessario per produrre il certificato
-	$FileJKS= $FolderDestination + $Certificate.CN + ".JKS"	#File Java Key Store
-	$FileRSA= $FolderDestination + $Certificate.CN + "_RSA.KEY"	#File della chiave privata in formato RSA
-	$FileRCD= $FolderDestination + $Certificate.CN + ".RCD"	#File Record per aggiornare l'inventario
+    $FileOPT= $FolderDestination + $FileNameSTD + ".OPT"	#File delle opzioni per produrre il CSR
+    $FileCSR= $FolderDestination + $FileNameSTD + ".CSR"	#File Certificate Sign Request X509 PEM
+    $FileCER= $FolderDestination + $FileNameSTD + ".CER"	#Certificato prodotto dalla CA
+    $FileRSP= $FolderDestination + $FileNameSTD + ".rsp"	#File con le risposte della CA
+    $FilePFX= $FolderDestination + $FileNameSTD + ".PFX"	#File PKCS#12 con chiave pubblica e privata
+	$FTmpPRV= $FolderDestination + $FileNameSTD + "_PRV_tmp.key"	#File temporaneo con la chiave PRIVATA
+    $FilePUB= $FolderDestination + $FileNameSTD + "_PUB.CRT"	#File con la chiave PUBBLICA e KeyChain X509 PEM
+    $FilePRV= $FolderDestination + $FileNameSTD + "_PRV.KEY"	#File con la chiave PRIVATA e KeyChain X509 PEM
+	$FileDTL= $FolderDestination + $FileNameSTD + ".TXT"	#File di testo con i dettagli del certificato
+    $FileCSV= $FolderDestination + $FileNameSTD + ".CSV"	#File CSV necessario per produrre il certificato
+	$FileJKS= $FolderDestination + $FileNameSTD + ".JKS"	#File Java Key Store
+	$FileRSA= $FolderDestination + $FileNameSTD + "_RSA.KEY"	#File della chiave privata in formato RSA
+	$FileRCD= $FolderDestination + $FileNameSTD + ".RCD"	#File Record per aggiornare l'inventario
+	$FileP12= $FolderDestination + $FileNameSTD + ".P12"	#File PKCS#12 con chiave pubblica e privata
 
 
 	#------------------------------------------------------------------------------
@@ -230,9 +246,34 @@ foreach ($Certificate in $CSV) {
         # Creazione del file CSR Certificate Sign Request
         & certreq -new $FileOPT $FileCSR  1>$null
 		#------------------------------------------------------------------------------
+		# Aggiunge al file DTL i dettagli del certificato
+		$Details=  $Details + `
+		"Computer name`r`n`t$ComputerName`r`n`r`n"
+		Set-Content -Path $FileDTL -Value $Details -force  1>$null
+
+		$Record= `
+			$Certificate.CodiceAPM + "`t" + `
+			$Certificate.CN + "`t" + `
+			$Certificate.SAN + "`t" + `
+			$Expiration + "`t" + `
+			$CertificateFolder + "`t" + `
+			$SubCA + "`t" + `
+			$UserName
+		#------------------------------------------------------------------------------
+		# Crea il file Record per aggiornare l'inventario dei certificati
+		Set-Content -Path $FileRCD -Value $Record -force  1>$null
+
+		#------------------------------------------------------------------------------
         # Se si richiede un certificato Public ci si passa al record successivo del CSV
 		if (($Certificate.Ambito -eq 'Public-Produzione') -or ($Certificate.Ambito -eq 'Public-NPE')) {
-			Write-Host -Foreground black -background Green "`tDati del certificato salvati in $FolderDestination"
+			Write-Host -Foreground black -background Green "Dati del certificato salvati in`r`n`t$FolderDestination"
+			Write-Host "Procedere alla richiesta della firma del certificato nei confronti della CA"
+			if ($MultiSAN -eq '---') {
+				Write-Host "specificando che non si tratta di certificato Multi SAN"
+			}
+			
+			else {Write-Host "specificando che si tratta di certificato Multi SAN`r`n`t$MultiSAN"}
+			
 			continue
 		}
 		
@@ -511,12 +552,19 @@ foreach ($Certificate in $CSV) {
 		$CertPRV | Set-Content -Path $FilePRV -force  1>$null
 
 		#------------------------------------------------------------------------------
-		# Si crea il Java Key Store con il certificato Alias= $DNSName
+		# Si legge l'alias nel file PFX
 		if ($(keytool -list -storetype pkcs12 -keystore $FilePFX -deststorepass $Certificate.PassWD)[6] -match "(.*?),.*") {
 			$CertificateAlias= $Matches[1]
 		}
-		else {Throw "Non trovato il certificato nel PFX"}
+		else {Throw "Non trovato l'alias per il certificato nel file PFX"}
+		
+		#------------------------------------------------------------------------------
+		# Si crea il certificato in formato PKCS#12
+		& $OpenSSL pkcs12 -export -in $FileCER -inkey $FilePRV -name $Certificate.CN -passout pass:$($Certificate.PassWD) -out $FileP12 *>$null
 
+
+		#------------------------------------------------------------------------------
+		# Si crea il Java Key Store con il certificato Alias= $DNSName
 		keytool -importkeystore `
 			-srcstoretype pkcs12 -srckeystore $FilePFX -srcstorepass $Certificate.PassWD -srcalias $CertificateAlias `
 			-deststoretype jks -destkeystore $FileJKS -deststorepass $Certificate.PassWD -destalias $Certificate.CN `
@@ -530,7 +578,6 @@ foreach ($Certificate in $CSV) {
 	#------------------------------------------------------------------------------
 	# Si Cancellano i file non necessari
     if (Test-Path $FileRSP) {Remove-Item -Path $FileRSP}
-    #if (Test-Path $FTmpPUB) {Remove-Item -Path $FTmpPUB}
     if (Test-Path $FTmpPRV) {Remove-Item -Path $FTmpPRV}
 
     #------------------------------------------------------------------------------
@@ -565,10 +612,8 @@ foreach ($Certificate in $CSV) {
 	#------------------------------------------------------------------------------
 	# Crea il file Record per aggiornare l'inventario dei certificati
 	Set-Content -Path $FileRCD -Value $Record -force  1>$null
-
-
 	
-    Write-Host -Foreground black -background Green "`tDati del certificato salvati in $FolderDestination"
+    Write-Host -Foreground black -background Green "Dati del certificato salvati in`r`n`t$FolderDestination"
 
 }
 Write-Host
